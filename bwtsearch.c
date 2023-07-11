@@ -3,32 +3,45 @@
 #include <strings.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include "bwtsearch.h"
+#include "bwt.h"
 
-#define PATTERN_MAX 512
-extern char* strdup(const char*);
+int main(int argc, char **argv) {
+	struct Args *args = parseArgs(argc, argv);
+	printf("Pattern - %s\n", args->pattern);
+	char *source = parseBWTString(args);
 
-struct Args {
-	FILE *rlbFile;
-	FILE *indexFile;
-	char *pattern;
-};
+	struct MatchList *matches = initMatchList();
+	matches = searchBWT(matches, source, args->pattern);
+	printf("%d\n", matches->size);
+
+	freeArgs(args);
+	return 0;
+}
+
+struct MatchList *initMatchList() {
+	struct MatchList *newMatchList = (struct MatchList *)malloc(sizeof(struct MatchList));
+	newMatchList->matches = NULL;
+	newMatchList->size = 0;
+	return newMatchList;
+}
 
 struct Args *parseArgs(int argc, char **argv) {
 	if (argc != 4) {
-		printf("Incorrect number of arguments provided");
+		printf("Incorrect number of arguments provided\n");
 		exit(1);
 	}
 
 	struct Args *args = (struct Args *)malloc(sizeof(struct Args));
 	if (args == NULL) {
-		printf("Memory allocation error when initialising arg container");
+		printf("Memory allocation error when initialising arg container\n");
 		exit(1);
 	}
 
 	args->pattern = strdup(argv[3]);
 	args->rlbFile = fopen(argv[1], "rb");
 	if (args->rlbFile == NULL) {
-		printf("rlb file does not exist");
+		printf("rlb file does not exist\n");
 		exit(1);
 	}
 	args->indexFile = fopen(argv[2], "w+");
@@ -37,16 +50,20 @@ struct Args *parseArgs(int argc, char **argv) {
 }
 
 void freeArgs(struct Args *args) {
+	fclose(args->rlbFile);
+	fclose(args->indexFile);
 	free(args->pattern);
 	free(args);
 }
 
 
-int main(int argc, char **argv) {
-	struct Args *args = parseArgs(argc, argv);
-	printf("%s", args->pattern);
-	freeArgs(args);
+char *parseBWTString(struct Args *args) {
+	fseek(args->rlbFile, 0, SEEK_END);
+	long fileSize = ftell(args->rlbFile);
+	char *source = (char *)malloc((fileSize+1)*sizeof(char));
 
-	return 0;
+	fseek(args->rlbFile, 0, SEEK_SET);
+	long sourceSize = fread(source, sizeof(char), fileSize, args->rlbFile);
+	source[sourceSize] = '\0';
+	return source;
 }
-
