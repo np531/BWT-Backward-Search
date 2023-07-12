@@ -11,7 +11,7 @@ OBJS = $(SRC:.c=.o)
 # all: $(target)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET)
+	$(CC) $(CFLAGS) $(OBJS) -o $(TARGET) -lm
 	rm $(OBJS)
 
 $(OBJS): $(INCS)

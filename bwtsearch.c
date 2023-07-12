@@ -4,68 +4,9 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stdbool.h>
+#include <math.h>
 #include "bwtsearch.h"
 #include "bwt.h"
-
-void charAsBinary(unsigned char c) {
-    // Start from the most significant bit (MSB)
-    unsigned char mask = 1 << (sizeof(unsigned char) * 8 - 1);
-
-    // Iterate over each bit
-    for (int i = 0; i < sizeof(unsigned char) * 8; i++) {
-        // Check if the current bit is set
-        if (c & mask) {
-            printf("1");
-        } else {
-            printf("0");
-        }
-
-        // Shift the mask to the right to check the next bit
-        mask >>= 1;
-    }
-
-    printf("\n");
-}
-
-void longAsBinary(unsigned long num) {
-    // Start from the most significant bit (MSB)
-    long mask = 1L << (sizeof(long) * 8 - 1);
-
-    // Iterate over each bit
-    for (int i = 0; i < sizeof(long) * 8; i++) {
-        // Check if the current bit is set
-        if (num & mask) {
-            printf("1");
-        } else {
-            printf("0");
-        }
-
-        // Shift the mask to the right to check the next bit
-        mask >>= 1;
-    }
-
-    printf("\n");
-}
-
-void intAsBinary(unsigned int num) {
-    // Start from the most significant bit (MSB)
-    int mask = 1 << (sizeof(int) * 8 - 1);
-
-    // Iterate over each bit
-    for (int i = 0; i < sizeof(int) * 8; i++) {
-        // Check if the current bit is set
-        if (num & mask) {
-            printf("1");
-        } else {
-            printf("0");
-        }
-
-        // Shift the mask to the right to check the next bit
-        mask >>= 1;
-    }
-
-    printf("\n");
-}
 
 // Assumes little endian
 void printBits(size_t const size, void const * const ptr)
@@ -83,40 +24,67 @@ void printBits(size_t const size, void const * const ptr)
     puts("");
 }
 
-void addToIndex(struct Index *index, char cur, int run) {
-	if (run == 0) {
-		index->S = (char *)realloc(index->S, index->count + sizeof(char) + 1);
-		index->S = strncat(index->S, &cur, 1);
-		index->count++;
-	} else if (run >= 3) {
+void addToB(struct Index *index, int run) {
+	// Append B Array
+	int curSize = ceil(index->count/32.0);
+	int newSize = ceil((index->count+run)/32.0);
+	int offset = index->count % 32;
 
+	// Store bits from LSB first
+	if (newSize > curSize) {
+		// A new int is needed in the bit array
+		printf("curSize: %d, newSize: %d\n", curSize, newSize);
+		index->B = (uint32_t *)realloc(index->B, newSize*sizeof(uint32_t));
+		if (index->count == 0) {
+			index->B[curSize] |= 1 << offset;
+
+		} else{
+			index->B[curSize - 1] |= 1 << offset;
+		}
 	} else {
-		printf("INVALID RUN LENGTH");
+		index->B[curSize - 1] |= 1 << offset;
+	}
+}
+
+/*
+ *	Adds a given character and run length to the RLB index (S,B,B' arrays)
+ */
+void addToIndex(struct Index *index, char cur, int run) {
+	// Append S array
+	index->S = (char *)realloc(index->S, index->count + sizeof(char) + 1);
+	index->S = strncat(index->S, &cur, 1);
+
+	addToB(index, run);
+
+	if (run == 0) {
+		index->count++;
+	} else if (run >= MIN_RUN) {
+		index->count += run;
+	} else {
+		printf("INVALID RUN LENGTH\n");
 		exit(1);
 	}
-
 }
 
 /*
  * Converts consecutive bytes representing a run into the decimal value
  * of that long (adding the +3)
  */
-uint64_t runToLong(char *source, long start, long end) {
+int runToInt(char *source, long start, long end) {
 	uint64_t run = 0;
 	unsigned char cur = 0;
 	unsigned char bitmask = 0x7F;
 
+	// Reconstruct the bytes back into the size of the run
 	while (end > start) {
 		cur = source[end] & bitmask;
-		printBits(sizeof(cur), &cur);
-		run = run | cur;
+		run |= cur;
 		run <<= 7;
-
 		end--;
 	}
 	run >>= 7;
 
-	return run + 3;	
+	return run + MIN_RUN;	
 }
 
 void decodeRLB(char *source, struct Index *index) {
@@ -124,56 +92,76 @@ void decodeRLB(char *source, struct Index *index) {
 	unsigned char temp;
 	long start;
 	long end;
-	long run;
+	int run;
+	// Iterate through each byte
 	for (long i = 0; i < strlen(source); i++) {
 		cur = source[i];
-		if (!(cur >> 7 & 1)) {
-			start = i; 
-			end = i+1;
-			temp = source[end];
-			if (!((temp >> 7) & 1)) {
-				addToIndex(index, (char)cur, 0);
-			} else {
-				// Find the start and end indexes of the run count bytes
-				while ((temp >> 7) & 1) {
-					end++;
-					temp = source[end];
-				}
-				end--;
-				i = end;
-				printf("Start->%ld, End->%ld\n", start, end);
-				run = runToLong(source, start, end);
-				printf("%ld\n", run);
-			}
-		} else {
-			printf("FUCK\n");
+
+		if ((cur>>7)&1) {
+			printf("ENCOUNTERED RUN BEFORE CHAR EXITING\n");
+			exit(1);	
 		}
-		/* charAsBinary(cur); */
+
+		start = i; 
+		end = i+1;
+		temp = source[end];
+		if (!((temp >> 7) & 1)) {
+			// Add straight to index if the following byte isnt a run
+			addToIndex(index, (char)cur, 0);
+		} else {
+			// Find the start and end indexes of the run count bytes
+			while ((temp >> 7) & 1) {
+				end++;
+				temp = source[end];
+			}
+			end--;
+			i = end;
+
+			/* printf("Start->%ld, End->%ld\n", start, end); */
+
+			run = runToInt(source, start, end);
+			printf("%d\n", run);
+			addToIndex(index, (char)cur, run);
+		}
 	}
+
+	// Add terminating 1 to B array
+	addToB(index, 0);	
+
 	if (index->S != NULL) {
 		printf("%s\n", index->S);
+		printf("%ld\n", index->count);
+		printf("%ld\n",strlen(index->S));
 	}	
+
 	printf("\n");
 }
 
 int main(int argc, char **argv) {
+	// Initialise data structures
 	struct Args *args = parseArgs(argc, argv);
 	printf("Pattern - %s\n", args->pattern);
 	char *source = parseRLBString(args);
-
 	struct MatchList *matches = initMatchList();
+	struct Index *index = initIndex();
+
+	// Execute search
 	/* matches = searchBWT(matches, source, args->pattern); */
 	/* printf("%d\n", matches->size); */
-	struct Index *index = initIndex();
 	decodeRLB(source, index);
-	// TODO - Remember to add \0 to S and find some way to terminate B (count?)
-	// 		  Note that we might need to made multiple reads to the rlb
-	// 		  file and populate the index in chunks, so the terminators
-	// 		  should be added here, after all decodeRLBs are called.
+	printBits(ceil(index->count/32.0)*sizeof(uint32_t), index->B);
 
+	// Free data structures
+	freeIndex(index);
 	freeMatchList(matches);
 	freeArgs(args);
 	return 0;
+}
+
+void freeIndex(struct Index *index) {
+	free(index->S);
+	free(index->B);
+	free(index);
 }
 
 struct Index *initIndex(void) {
