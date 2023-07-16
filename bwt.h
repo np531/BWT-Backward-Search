@@ -1,6 +1,8 @@
 #ifndef BWT_H
 #define BWT_H
 
+#include "bwtsearch.h"
+
 extern char* strdup(const char*);
 
 struct Match {
@@ -14,6 +16,9 @@ struct MatchList {
 };
 
 struct MatchList *searchBWT(struct MatchList *matches, char *source, char *pattern);
+void freeMatchList(struct MatchList *matches);
+struct MatchList *initMatchList(void);
+void buildC(struct Index *index);
 
 
 #endif

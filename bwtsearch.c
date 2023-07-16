@@ -24,39 +24,41 @@ void printBits(size_t const size, void const * const ptr)
     puts("");
 }
 
-void addToB(struct Index *index, int run) {
-	// Append B Array
-	int curSize = ceil(index->count/32.0);
-	int newSize = ceil((index->count+run)/32.0);
-	int offset = index->count % 32;
+/* void addToB(struct Index *index, int run) { */
+/* 	// Append B Array */
+/* 	int curSize = ceil(index->count/32.0); */
+/* 	int newSize = ceil((index->count+run)/32.0); */
+/* 	int offset = index->count % 32; */
 
-	// Store bits from LSB first
-	if (newSize > curSize) {
-		// A new int is needed in the bit array
-		printf("curSize: %d, newSize: %d\n", curSize, newSize);
-		index->B = (uint32_t *)realloc(index->B, newSize*sizeof(uint32_t));
-		if (index->count == 0) {
-			index->B[curSize] |= 1 << offset;
+/* 	// Store bits from LSB first */
+/* 	if (newSize > curSize) { */
+/* 		// A new int is needed in the bit array */
+/* 		printf("curSize: %d, newSize: %d\n", curSize, newSize); */
+/* 		index->B = (uint32_t *)realloc(index->B, newSize*sizeof(uint32_t)); */
+/* 		if (index->count == 0) { */
+/* 			index->B[curSize] |= 1 << offset; */
 
-		} else{
-			index->B[curSize - 1] |= 1 << offset;
-		}
-	} else {
-		index->B[curSize - 1] |= 1 << offset;
-	}
-}
+/* 		} else{ */
+/* 			index->B[curSize - 1] |= 1 << offset; */
+/* 		} */
+/* 	} else { */
+/* 		index->B[curSize - 1] |= 1 << offset; */
+/* 	} */
+/* } */
 
 /*
  *	Adds a given character and run length to the RLB index (S,B,B' arrays)
  */
 void addToIndex(struct Index *index, char cur, int run) {
 	// Append S array
-	index->S = (char *)realloc(index->S, index->count + sizeof(char) + 1);
-	index->S = strncat(index->S, &cur, 1);
+	int temp = run;
+	index->source = (char *)realloc(index->source, index->count + run*sizeof(char) + 1);
+	while (temp > 0) {
+		index->source = strncat(index->source, &cur, 1);
+		temp--;
+	}
 
-	addToB(index, run);
-
-	if (run == 0) {
+	if (run == 1) {
 		index->count++;
 	} else if (run >= MIN_RUN) {
 		index->count += run;
@@ -107,7 +109,7 @@ void decodeRLB(char *source, struct Index *index) {
 		temp = source[end];
 		if (!((temp >> 7) & 1)) {
 			// Add straight to index if the following byte isnt a run
-			addToIndex(index, (char)cur, 0);
+			addToIndex(index, (char)cur, 1);
 		} else {
 			// Find the start and end indexes of the run count bytes
 			while ((temp >> 7) & 1) {
@@ -117,24 +119,19 @@ void decodeRLB(char *source, struct Index *index) {
 			end--;
 			i = end;
 
-			/* printf("Start->%ld, End->%ld\n", start, end); */
-
 			run = runToInt(source, start, end);
-			printf("%d\n", run);
 			addToIndex(index, (char)cur, run);
 		}
 	}
 
 	// Add terminating 1 to B array
-	addToB(index, 0);	
+	/* addToB(index, 0); */	
 
-	if (index->S != NULL) {
-		printf("%s\n", index->S);
+	if (index->source != NULL) {
+		printf("%s\n", index->source);
 		printf("%ld\n", index->count);
-		printf("%ld\n",strlen(index->S));
+		printf("%ld\n",strlen(index->source));
 	}	
-
-	printf("\n");
 }
 
 int main(int argc, char **argv) {
@@ -142,25 +139,27 @@ int main(int argc, char **argv) {
 	struct Args *args = parseArgs(argc, argv);
 	printf("Pattern - %s\n", args->pattern);
 	char *source = parseRLBString(args);
-	struct MatchList *matches = initMatchList();
+	/* struct MatchList *matches = initMatchList(); */
 	struct Index *index = initIndex();
 
 	// Execute search
 	/* matches = searchBWT(matches, source, args->pattern); */
 	/* printf("%d\n", matches->size); */
 	decodeRLB(source, index);
-	printBits(ceil(index->count/32.0)*sizeof(uint32_t), index->B);
+	buildC(index);
 
 	// Free data structures
 	freeIndex(index);
-	freeMatchList(matches);
+	/* freeMatchList(matches); */
 	freeArgs(args);
 	return 0;
 }
 
 void freeIndex(struct Index *index) {
-	free(index->S);
-	free(index->B);
+	if (index->source != NULL) {
+		free(index->source);
+	}
+	free(index->c);
 	free(index);
 }
 
@@ -171,8 +170,8 @@ struct Index *initIndex(void) {
 		exit(1);
 	}
 	index->count = 0;
-	index->S = NULL;
-	index->B = NULL;
+	index->source = NULL;
+	index->c = (int *)malloc(sizeof(int)*127);
 	return index;
 }
 
