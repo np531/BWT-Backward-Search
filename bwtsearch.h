@@ -5,7 +5,9 @@
 #include <inttypes.h>
 
 #define PATTERN_MAX 512
+#define ALPHABET_SIZE 127
 #define MIN_RUN 3
+#define OCC_GAP 3
 extern char* strdup(const char*);
 
 struct Args {
@@ -14,10 +16,13 @@ struct Args {
     char *pattern;
 };
 
+
+
 struct Index {
 	long count;
 	char *source;
 	int *c;
+	int **occ;
 };
 
 struct Args *parseArgs(int argc, char **argv);

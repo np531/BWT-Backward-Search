@@ -15,10 +15,11 @@ struct MatchList {
 	int size;
 };
 
+
 struct MatchList *searchBWT(struct MatchList *matches, char *source, char *pattern);
 void freeMatchList(struct MatchList *matches);
 struct MatchList *initMatchList(void);
-void buildC(struct Index *index);
+void buildTables(struct Index *index);
 
 
 #endif

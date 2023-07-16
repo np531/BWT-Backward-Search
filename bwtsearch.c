@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
 	/* matches = searchBWT(matches, source, args->pattern); */
 	/* printf("%d\n", matches->size); */
 	decodeRLB(source, index);
-	buildC(index);
+	buildTables(index);
 
 	// Free data structures
 	freeIndex(index);
@@ -159,6 +159,11 @@ void freeIndex(struct Index *index) {
 	if (index->source != NULL) {
 		free(index->source);
 	}
+	if (index->occ != NULL) {
+		// TODO - free occ subarrays
+		free(index->occ);
+	}
+
 	free(index->c);
 	free(index);
 }
@@ -171,7 +176,23 @@ struct Index *initIndex(void) {
 	}
 	index->count = 0;
 	index->source = NULL;
-	index->c = (int *)malloc(sizeof(int)*127);
+
+	index->c = (int *)malloc(sizeof(int)*ALPHABET_SIZE);
+	// Initialise the array to empty
+	for (int i = 0 ; i < ALPHABET_SIZE ; i++) {
+		index->c[i] = 0;
+	}
+
+	index->occ = (int **)malloc(sizeof(int *));
+	if (index->occ == NULL) {
+		printf("Unable to allocate initial memory for occ\n");
+		exit(1);
+	}
+	index->occ[0] = (int *)calloc(ALPHABET_SIZE, sizeof(int));
+	if (index->occ[0] == NULL) {
+		printf("Unable to allocate initial memory for occ\n");
+		exit(1);
+	}
 	return index;
 }
 
