@@ -139,18 +139,18 @@ int main(int argc, char **argv) {
 	struct Args *args = parseArgs(argc, argv);
 	printf("Pattern - %s\n", args->pattern);
 	char *source = parseRLBString(args);
-	/* struct MatchList *matches = initMatchList(); */
+	struct MatchList *matches = initMatchList();
 	struct Index *index = initIndex();
 
 	// Execute search
-	/* matches = searchBWT(matches, source, args->pattern); */
 	/* printf("%d\n", matches->size); */
 	decodeRLB(source, index);
 	buildTables(index);
+	matches = searchBWT(index , matches, args->pattern);
 
 	// Free data structures
 	freeIndex(index);
-	/* freeMatchList(matches); */
+	freeMatchList(matches);
 	freeArgs(args);
 	return 0;
 }
@@ -160,8 +160,12 @@ void freeIndex(struct Index *index) {
 		free(index->source);
 	}
 	if (index->occ != NULL) {
-		// TODO - free occ subarrays
-		free(index->occ);
+		int i = 0;
+		while (i < index->count) {
+			free(index->occ[i]);
+			i++;
+		}
+		/* free(index->occ); */
 	}
 
 	free(index->c);
@@ -200,6 +204,7 @@ void freeMatchList(struct MatchList *matches) {
 	if (matches->matches != NULL) {
 		free(matches->matches);
 	}
+	// TODO - FREE MATCHES LIST
 	free(matches);
 }
 

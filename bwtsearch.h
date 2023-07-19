@@ -16,8 +16,6 @@ struct Args {
     char *pattern;
 };
 
-
-
 struct Index {
 	long count;
 	char *source;
