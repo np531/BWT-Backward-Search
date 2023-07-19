@@ -9,20 +9,20 @@
 #include "bwt.h"
 
 // Assumes little endian
-void printBits(size_t const size, void const * const ptr)
-{
-    unsigned char *b = (unsigned char*) ptr;
-    unsigned char byte;
-    int i, j;
+/* void printBits(size_t const size, void const * const ptr) */
+/* { */
+/*     unsigned char *b = (unsigned char*) ptr; */
+/*     unsigned char byte; */
+/*     int i, j; */
 
-    for (i = size-1; i >= 0; i--) {
-        for (j = 7; j >= 0; j--) {
-            byte = (b[i] >> j) & 1;
-            printf("%u", byte);
-        }
-    }
-    puts("");
-}
+/*     for (i = size-1; i >= 0; i--) { */
+/*         for (j = 7; j >= 0; j--) { */
+/*             byte = (b[i] >> j) & 1; */
+/*             printf("%u", byte); */
+/*         } */
+/*     } */
+/*     puts(""); */
+/* } */
 
 /* void addToB(struct Index *index, int run) { */
 /* 	// Append B Array */
@@ -127,17 +127,16 @@ void decodeRLB(char *source, struct Index *index) {
 	// Add terminating 1 to B array
 	/* addToB(index, 0); */	
 
-	if (index->source != NULL) {
-		printf("%s\n", index->source);
-		printf("%ld\n", index->count);
-		printf("%ld\n",strlen(index->source));
-	}	
+	/* if (index->source != NULL) { */
+	/* 	printf("%s\n", index->source); */
+	/* 	printf("%ld\n", index->count); */
+	/* 	printf("%ld\n",strlen(index->source)); */
+	/* } */	
 }
 
 int main(int argc, char **argv) {
 	// Initialise data structures
 	struct Args *args = parseArgs(argc, argv);
-	printf("Pattern - %s\n", args->pattern);
 	char *source = parseRLBString(args);
 	struct MatchList *matches = initMatchList();
 	struct Index *index = initIndex();
@@ -146,7 +145,8 @@ int main(int argc, char **argv) {
 	/* printf("%d\n", matches->size); */
 	decodeRLB(source, index);
 	buildTables(index);
-	matches = searchBWT(index , matches, args->pattern);
+	matches = findMatches(index, matches, args->pattern);
+	printMatches(matches);
 
 	// Free data structures
 	freeIndex(index);
@@ -201,8 +201,8 @@ struct Index *initIndex(void) {
 }
 
 void freeMatchList(struct MatchList *matches) {
-	if (matches->matches != NULL) {
-		free(matches->matches);
+	if (matches->head != NULL) {
+		free(matches->head);
 	}
 	// TODO - FREE MATCHES LIST
 	free(matches);
@@ -210,8 +210,9 @@ void freeMatchList(struct MatchList *matches) {
 
 struct MatchList *initMatchList() {
 	struct MatchList *newMatchList = (struct MatchList *)malloc(sizeof(struct MatchList));
-	newMatchList->matches = NULL;
-	newMatchList->size = 0;
+	newMatchList->head = NULL;
+	/* newMatchList->matches = NULL; */
+	/* newMatchList->size = 0; */
 	return newMatchList;
 }
 
