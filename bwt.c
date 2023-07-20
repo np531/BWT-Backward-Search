@@ -20,10 +20,22 @@ int getNextC(struct Index *index, char curChar) {
 }
 
 int rank(struct Index *index, char curChar, int line) {
-	return index->occ[line - 1][(int)curChar];	
+	int a = line - 1;
+	/* int b = index->count; */
+	if (line - 1 < 0) {
+		/* printf("a\n"); */
+		return -1;
+		/* printf("encountered negative index - %d\n", (a%b)+b); */
+		/* a = 3; */
+		/* exit(1); */
+	}
+	return index->occ[a][(int)curChar];	
 }
 
 char getBwtChar(struct Index *index, int offset) {
+	if (offset - 1 < 0) {
+		/* printf("encountered negative offset\n"); */
+	}
 	return index->source[offset - 1];
 }
 
@@ -79,6 +91,33 @@ long getNextRecord(struct Index *index, int offset) {
 }
 
 /*
+ *	Given the suffix index, returns a string containing all chars from the index to ']'
+ */
+char *extractStr(struct Index *index, int offset) {
+	char curChar = getBwtChar(index, offset);
+	char *record = (char *)malloc(sizeof(char));;
+	record[0] = '\0';
+	/* printf("\na\n"); */
+	while (offset > 0 && curChar != ']') {
+		// Add current decoded char to ouput string
+		record = (char *)realloc(record, strlen(record) + 2);
+		record = strncat(record, &curChar, 1);
+
+		offset = rank(index, curChar, offset) + index->c[(int)curChar];
+		curChar = getBwtChar(index, offset);
+	}
+
+	reverseStr(record);
+	// Removes previous record junk from the end of the record (occurs on last record match sometimes)
+	if (strlen(record) >= 2 && record[strlen(record)-2] == '[') {
+		record[strlen(record)-2] = '\0';
+	} else if (strlen(record) >= 1 && record[strlen(record)-1] == '[') {
+		record[strlen(record)-1] = '\0';
+	} 
+	return record;
+}
+
+/*
  *	Performs a backwards search for a given pattern
  *	returns 1 on success, 0 on failure
  */
@@ -97,6 +136,10 @@ int searchBWT(struct Index *index, char *pattern, int *first, int *last) {
 
 	while (*first <= *last && pIndex >= 2) {
 		curChar = pattern[pIndex-2];
+		/* printf("\nfirst - |%d|\n", *first); */
+		if (rank(index, curChar, *first - 1) == -1) {
+			return 2;
+		}
 		*first = index->c[(int)curChar] + rank(index, curChar, *first - 1) + 1;
 		*last = index->c[(int)curChar] + rank(index, curChar, *last);
 		pIndex--;
@@ -115,27 +158,6 @@ int searchBWT(struct Index *index, char *pattern, int *first, int *last) {
 	return 1;
 }
 
-/*
- *	Given the suffix index, returns a string containing all chars from the index to ']'
- */
-char *extractStr(struct Index *index, int offset) {
-	char curChar = getBwtChar(index, offset);
-	char *record;
-	while (offset > 0 && curChar != ']') {
-		if (record == NULL) {
-			record = (char *)realloc(record, sizeof(char)+1);
-			record[0] = curChar;
-			record[1] = '\0';
-		} else {
-			record = (char *)realloc(record, strlen(record) + 1);
-			record = strncat(record, &curChar, 1);
-		}
-		offset = rank(index, curChar, offset) + index->c[(int)curChar];
-		curChar = getBwtChar(index, offset);
-	}
-	reverseStr(record);
-	return record;
-}
 
 /*
  *	Performs the actual BWT search on an indexed BWT string
@@ -157,24 +179,39 @@ struct MatchList *findMatches(struct Index *index, struct MatchList *matches, ch
 	int start;
 	int end;
 	struct Match *curMatch;
+	int result;
 	while (first <= last) {
 		record = getNextRecord(index, first);
-		sprintf(recordStr, "[%ld", record);
+		sprintf(recordStr, "[%ld]", record);
 		/* printf("%s\n",recordStr); */
 
 		if (searchBWT(index, recordStr, &start, &end) == 0) {
 			// Handle last record match
-			searchBWT(index, "[", &start, &end);
+			//  - Counts up from 0 looking for the first record
+			for (long i = 0 ; i <= record - 1 ; i++) {
+				sprintf(recordStr, "[%ld]", i);
+				/* printf("[%ld]\n", i); */
+
+				result = searchBWT(index, recordStr, &start, &end);
+				if (result == 1) {
+					break;
+				} else if (result == 2) {
+					// handle case where first index is first record
+					sprintf(recordStr, "%ld]", i);
+					searchBWT(index, recordStr, &start, &end);
+					break;
+				}
+			}
+			/* printf("Matched last record\n"); */
 		}
-		/* if (start != end) { */
-		/* 	printf("multiple record matches???? exiting..."); */
-		/* 	exit(1); */
-		/* } */
-		curMatch = initMatch(record-1,  extractStr(index, start));
+		char *strMatch = extractStr(index, start); 
+		curMatch = initMatch(record-1,  strMatch);
+		free(strMatch);
 		addMatch(matches, curMatch);
 
 		first++;
 	}
+	free(recordStr);
 
 	return matches;
 }

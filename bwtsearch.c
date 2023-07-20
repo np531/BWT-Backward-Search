@@ -201,10 +201,15 @@ struct Index *initIndex(void) {
 }
 
 void freeMatchList(struct MatchList *matches) {
-	if (matches->head != NULL) {
-		free(matches->head);
+	struct Match *cur = matches->head;
+	struct Match *next;
+
+	while (cur != NULL) {
+		next = cur->next;
+		free(cur);
+		cur = next;
 	}
-	// TODO - FREE MATCHES LIST
+
 	free(matches);
 }
 
