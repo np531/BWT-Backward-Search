@@ -90,22 +90,15 @@ int rank(struct Args *args, struct Index *index, char curChar, int line) {
 		int blockOffset = getGapOffset(index, a);
 		struct Occ *curOcc = (struct Occ *)malloc(sizeof(struct Occ));
 
-		/* printf("%d\n", blockOffset); */ 
 		fseek(args->indexFile, blockOffset*sizeof(struct Occ), SEEK_SET);
 		fread(curOcc, sizeof(struct Occ), 1, args->indexFile);
-		/* printf("rlbPos -> %ld\n", curOcc->rlbPos); */
-		/* printf("%d\n", startOcc->curRunCount); */
 		
 		if (a % index->gapSize != 0) {
 			printf("%c\n", getOccFromRlb(args, index, curOcc, blockOffset, a));
 		}
 		int result = curOcc->occ[(int)curChar];
 		free(curOcc);
-		/* for(int i=0;i<ALPHABET_SIZE;i++){ */
-		/* 	printf("%c | %d\n", (char)i, curOcc->occ[i]); */
-		/* } */
 		return result;
-		/* return index->occ[a][(int)curChar]; */	
 	}
 }
 
