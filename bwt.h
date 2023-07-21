@@ -18,14 +18,16 @@ struct MatchList {
 
 
 int getNextC(struct Index *index, char curChar);
-int rank(struct Index *index, char curChar, int line);
+int getGapOffset(struct Index *index, int offset);
+int getOccAtOffsetSlow(struct Index *index, int offset, char curChar);
+int rank(struct Args *args, struct Index *index, char curChar, int line);
 
 void reverseStr(char *str);
-long getNextRecord(struct Index *index, int offset);
-int searchBWT(struct Index *index, char *pattern, int *first, int *last);
-char *extractStr(struct Index *index, int offset);
+long getNextRecord(struct Args *args, struct Index *index, int offset);
+int searchBWT(struct Args *args, struct Index *index, char *pattern, int *first, int *last);
+char *extractStr(struct Args *args, struct Index *index, int offset);
 
-struct MatchList *findMatches(struct Index *index, struct MatchList *matches, char *pattern);
+struct MatchList *findMatches(struct Args *args, struct Index *index, struct MatchList *matches, char *pattern);
 void addMatch(struct MatchList *matchList, struct Match *match);
 void printMatches(struct MatchList *matchList);
 struct MatchList *initMatchList(void);

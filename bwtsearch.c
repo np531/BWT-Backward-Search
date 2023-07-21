@@ -29,21 +29,6 @@ void printBits(size_t const size, void const * const ptr)
  */
 void addToIndex(struct Index *index, char cur, int run) {
 	// Append source array
-	int temp = run;
-	index->source = (char *)realloc(index->source, index->count + run*sizeof(char) + 1);
-	while (temp > 0) {
-		index->source = strncat(index->source, &cur, 1);
-		temp--;
-	}
-
-	if (run == 1) {
-		index->count++;
-	} else if (run >= MIN_RUN) {
-		index->count += run;
-	} else {
-		printf("INVALID RUN LENGTH\n");
-		exit(1);
-	}
 }
 
 /*
@@ -74,52 +59,43 @@ int runToInt(char *source, long start, long end) {
 /*
  *	Builds the occurrence and C tables used for indexing the BWT string
  */
-void buildTables(struct Index *index) {
-	// Construct the occ table
-	int *prev = index->occ[0];
-	for (int i = 0 ; i < strlen(index->source) ; i++) {
-		// Update the Occ table
-		if (i == 0) {
-			index->occ[i][(int)index->source[i]]++;
-		} else {
-			index->occ = (int **)realloc(index->occ, (i+1)*sizeof(int *));
-			if (index->occ == NULL) {
-				printf("Unable to allocate memory for occ\n");
-				exit(1);
-			}
+/* void buildTables(struct Index *index) { */
+/* 	// Construct the occ table */
+/* 	int *prev = index->occ[0]; */
+/* 	for (int i = 0 ; i < strlen(index->source) ; i++) { */
+/* 		// Update the Occ table */
+/* 		if (i == 0) { */
+/* 			index->occ[i][(int)index->source[i]]++; */
+/* 		} else { */
+/* 			index->occ = (int **)realloc(index->occ, (i+1)*sizeof(int *)); */
+/* 			if (index->occ == NULL) { */
+/* 				printf("Unable to allocate memory for occ\n"); */
+/* 				exit(1); */
+/* 			} */
 
-			index->occ[i] = (int *)calloc(ALPHABET_SIZE, sizeof(int));
-			if (index->occ[i] == NULL) {
-				printf("Unable to allocate memory for occ\n");
-				exit(1);
-			}
-			memcpy(index->occ[i], prev, ALPHABET_SIZE*sizeof(int));
-			index->occ[i][(int)index->source[i]]++;
-			prev = index->occ[i];
-		}
-	}
+/* 			index->occ[i] = (int *)calloc(ALPHABET_SIZE, sizeof(int)); */
+/* 			if (index->occ[i] == NULL) { */
+/* 				printf("Unable to allocate memory for occ\n"); */
+/* 				exit(1); */
+/* 			} */
+/* 			memcpy(index->occ[i], prev, ALPHABET_SIZE*sizeof(int)); */
+/* 			index->occ[i][(int)index->source[i]]++; */
+/* 			prev = index->occ[i]; */
+/* 		} */
+/* 	} */
 	
-	// Construct the C array
-	int *finalOcc = (int *)malloc(sizeof(int)*127);
-	int j = 0;
-	memcpy(finalOcc, index->occ[index->count-1], sizeof(int)*127);
-	for (int i = ALPHABET_SIZE - 1 ; i >= 0 ; i--) {
-		if (finalOcc[i] != 0) {
-			j = i - 1;
-			while (j >= 0) {
-				index->c[i] += finalOcc[j];
-				j--;
-			}
-		}
-	}
-	free(finalOcc);
-}
+/* 	// Construct the C array */
+/* 	int *finalOcc = (int *)malloc(sizeof(int)*127); */
+/* 	memcpy(finalOcc, index->occ[index->count-1], sizeof(int)*127); */
+/* 	initCTable(index, finalOcc); */
+/* 	free(finalOcc); */
+/* } */
 
 /*
  *	Reads the next char+binary run into a string to be processed
  *	Counts the number of bytes and adds it to posCount
  */
-int getNextRun(struct Args *args, char *run, long *posCount) {
+int getNextRun(struct Args *args, char *run, long *start, long *end) {
 	char cur;
 	run = (char *)realloc(run, sizeof(char));
 	run[0] = '\0';
@@ -130,14 +106,15 @@ int getNextRun(struct Args *args, char *run, long *posCount) {
 	}
 	run = (char *)realloc(run, strlen(run) + 2);
 	run = strncat(run, &cur, 1);
-	(*posCount)++;
+	(*start)++;
+	(*end)++;
 
 	// find all the subsequent run bytes
 	if (!fread(&cur, 1, 1, args->rlbFile)) {
 		return 1;
 	}
 	while ((cur >> 7) & 1) {
-		(*posCount)++;
+		(*end)++;
 		run = (char *)realloc(run, strlen(run) + 2);
 		run = strncat(run, &cur, 1);
 		if (!fread(&cur, 1, 1, args->rlbFile)) {
@@ -149,33 +126,110 @@ int getNextRun(struct Args *args, char *run, long *posCount) {
 	return 1;
 }
 
-void decodeRLB(struct Args *args, struct Index *index) {
-	long posCount = 0;
-	/* long lCount = 0; */
+/*
+ * decodes entire RLB string into memory
+ * Constructs the C table (occ table generated from memory for smaller files)
+ */
+void decodeRLBSlow(struct Args *args, struct Index *index) {
+	long start = 0;
+	long end = 0;
+	long lCount = -1;
+
 	char *run = (char *)malloc(sizeof(char));
-	/* int *curOcc = (int *)calloc(ALPHABET_SIZE, sizeof(int)); */
+	int *curOcc = (int *)calloc(ALPHABET_SIZE, sizeof(int));
+	curOcc[0] = 0;
 	run[0] = '\0';
 
-	/* for (int i = 0 ; i < ALPHABET_SIZE ; i++) { */
-	/* 	printf("%c : %d\n", (char)i, curOcc[i]); */
-	/* } */
+	int temp = 0;
+	int runLen = 0;
 
 	// Continually read each count from rlb file
-	while (getNextRun(args, run, &posCount)) { 
-		/* for (int i = 0; i < strlen(run) ; i++) { */
-		/* 	printf("%c", run[i]); */
-		/* } */
-		addToIndex(index, run[0], runToInt(run, 0, strlen(run)-1));
+	while (getNextRun(args, run, &start, &end)) { 
+		runLen = runToInt(run, 0, strlen(run)-1);
+		temp = runLen;
+
+		index->source = (char *)realloc(index->source, lCount + 1 + temp*sizeof(char) + 1);
+		while (temp > 0) {
+			index->source = strncat(index->source, run , 1);
+			curOcc[(int)run[0]]++;
+			temp--;
+			lCount++;
+		}
 	}
 
-	//TODO - pos in file is posCount-1
-	//TODO - Integrate gapCount and occ table construction into the initial rlb decode
-	//TODO - Store index to RLB and count through current run (for each occ)
-	//TODO - Rebuild OCC array structure (using array of new Occ structs)
+	// Construct the C array
+	initCTable(index, curOcc);
 
-	/* printf("\n"); */
-	/* printf("%ld\n", posCount); */
-	/* printf("%s\n", index->source); */
+	index->count = lCount+1;
+	free(curOcc);
+	free(run);
+}
+
+long getBwtSize(struct Args *args, struct Index *index) {
+	long start = 0;
+	long  end = 0;
+	char *run = (char *)malloc(sizeof(char));
+	run[0] = '\0';
+	long lCount = -1;
+
+	int temp = 0;
+	int runLen = 0;
+	while (getNextRun(args, run, &start, &end)) { 
+		runLen = runToInt(run, 0, strlen(run)-1);
+		temp = runLen;
+
+		while (temp > 0) {
+			temp--;
+			lCount++;
+		}
+	}
+	fseek(args->rlbFile, 0, SEEK_SET);
+	return lCount+1;
+
+}
+
+void decodeRLB(struct Args *args, struct Index *index) {
+	long start = 0;
+	long end = 0;
+	long lCount = -1;
+
+	struct Occ *newOcc = NULL; 
+	char *run = (char *)malloc(sizeof(char));
+	int *curOcc = (int *)calloc(ALPHABET_SIZE, sizeof(int));
+	run[0] = '\0';
+
+	int temp = 0;
+	int runLen = 0;
+
+	// Continually read each character run from rlb file
+	while (getNextRun(args, run, &start, &end)) { 
+		runLen = runToInt(run, 0, strlen(run)-1);
+		temp = runLen;
+
+		while (temp > 0) {
+			curOcc[(int)run[0]]++;
+			temp--;
+			lCount++;
+			
+			if (lCount % index->gapSize == 0) {
+				newOcc = initOccBlock(start - 1, curOcc, runLen-temp);
+				fwrite(newOcc, sizeof(struct Occ), 1, args->indexFile);
+				free(newOcc);
+			}
+		}
+		start=end;
+	}
+
+	// Construct the C array
+	initCTable(index, curOcc);
+
+	/* int occNum = getGapOffset(index, 2); */
+	/* fseek(args->indexFile, sizeof(struct Occ)*occNum, SEEK_SET); */
+	/* struct Occ *testOcc = (struct Occ *)malloc(sizeof(struct Occ)); */
+	/* fread(testOcc, sizeof(struct Occ), 1, args->indexFile); */
+
+	index->count = lCount+1;
+	free(curOcc);
 	free(run);
 }
 
@@ -184,19 +238,55 @@ int main(int argc, char **argv) {
 	int indexExists = 0;
 	struct Args *args = parseArgs(argc, argv, &indexExists);
 	struct MatchList *matches = initMatchList();
-	struct Index *index = initIndex();
+	struct Index *index = initIndex(args);
+	
 	
 	// Convert RLB to BWT 
-	decodeRLB(args, index);
-	buildTables(index);
-	matches = findMatches(index, matches, args->pattern);
-	printMatches(matches);
+	if (index->rlbSize <= SMALL_FILE_MAX) {
+		decodeRLBSlow(args, index);
+		matches = findMatches(args, index, matches, args->pattern);
+		printMatches(matches);
+
+	} else {
+		printf("large file\n");
+		long bwtSize = getBwtSize(args, index);
+		index->gapSize = (int)floor(bwtSize/index->numGaps);
+
+		//TODO - REMOVE ME
+		index->gapSize = 4;
+
+		if (indexExists) {
+			printf("NOT YET IMPLEMENTED\n");
+			exit(1);
+		} else {
+			decodeRLB(args, index);
+		}
+		int result = rank(args, index, 'n', 10);
+		printf("|%d|\n", result);
+
+		/* matches = findMatches(args, index, matches, args->pattern); */
+		/* printMatches(matches); */
+	}
 
 	// Free data structures
 	freeIndex(index);
 	freeMatchList(matches);
 	freeArgs(args);
 	return 0;
+}
+
+void initCTable(struct Index *index, int *lastOcc) {
+	int j = 0;
+	for (int i = ALPHABET_SIZE - 1 ; i >= 0 ; i--) {
+		if (lastOcc[i] != 0) {
+			j = i - 1;
+			while (j >= 0) {
+				index->c[i] += lastOcc[j];
+				j--;
+			}
+		}
+	}
+
 }
 
 struct Occ *initOccBlock(long rlbPos, int *curOcc, int curRunCount) {
@@ -206,10 +296,8 @@ struct Occ *initOccBlock(long rlbPos, int *curOcc, int curRunCount) {
 		exit(1);
 	}
 
-	// TODO - CHECK THAT THE -1 MAKES IT POINT TO THE CORRECT POS
-	newOcc->rlbPos = rlbPos - 1;
-	newOcc->occ = (int *)malloc(ALPHABET_SIZE*sizeof(int));
-	newOcc->occ = memcpy(newOcc->occ, curOcc, ALPHABET_SIZE*sizeof(int));
+	newOcc->rlbPos = rlbPos;
+	memcpy(newOcc->occ, curOcc, ALPHABET_SIZE*sizeof(int));
 	newOcc->curRunCount = curRunCount;
 
 	return newOcc;
@@ -233,7 +321,7 @@ void freeIndex(struct Index *index) {
 	free(index);
 }
 
-struct Index *initIndex(void) {
+struct Index *initIndex(struct Args* args) {
 	struct Index *index = (struct Index *)malloc(sizeof(struct Index));
 	if (index == NULL) {
 		printf("Unable to allocate memory for index\n");
@@ -248,16 +336,32 @@ struct Index *initIndex(void) {
 		index->c[i] = 0;
 	}
 
-	index->occ = (int **)malloc(sizeof(int *));
-	if (index->occ == NULL) {
-		printf("Unable to allocate initial memory for occ\n");
-		exit(1);
+	fseek(args->rlbFile, 0, SEEK_END);
+	index->rlbSize = ftell(args->rlbFile);
+	fseek(args->rlbFile, 0, SEEK_SET);
+
+	/* index->occ = (int **)malloc(sizeof(int *)); */
+	/* if (index->occ == NULL) { */
+	/* 	printf("Unable to allocate initial memory for occ\n"); */
+	/* 	exit(1); */
+	/* } */
+	/* index->occ[0] = (int *)calloc(ALPHABET_SIZE, sizeof(int)); */
+	/* if (index->occ[0] == NULL) { */
+	/* 	printf("Unable to allocate initial memory for occ\n"); */
+	/* 	exit(1); */
+	/* } */
+
+	/* index->occArray = NULL; */
+	if (index->rlbSize >= 525) {
+		int numGaps = (int)(floor(index->rlbSize)/(sizeof(struct Occ)+5));
+		index->numGaps = numGaps;
+		/* printf("numGaps: %d\n", numGaps); */
+		/* printf("gapSize: %d\n", index->gapSize); */
+	} else {
+		index->numGaps = 1;
+		index->gapSize = 1;
 	}
-	index->occ[0] = (int *)calloc(ALPHABET_SIZE, sizeof(int));
-	if (index->occ[0] == NULL) {
-		printf("Unable to allocate initial memory for occ\n");
-		exit(1);
-	}
+
 	return index;
 }
 
@@ -298,16 +402,13 @@ struct Args *parseArgs(int argc, char **argv, int *indexExists) {
 		printf("rlb file does not exist\n");
 		exit(1);
 	}
-	fseek(args->rlbFile, 0, SEEK_END);
-	args->rlbSize = ftell(args->rlbFile);
-	fseek(args->rlbFile, 0, SEEK_SET);
 	
 	// Check if index already exists, else create it
 	args->indexFile = fopen(argv[2], "rb");
 	if (args->indexFile) {
 		*indexExists = 1;
 	} else {
-		args->indexFile = fopen(argv[2], "w+");
+		args->indexFile = fopen(argv[2], "w+b");
 		*indexExists = 0;
 	}
 
@@ -321,14 +422,3 @@ void freeArgs(struct Args *args) {
 	free(args);
 }
 
-
-/* char *parseRLBString(struct Args *args) { */
-/* 	fseek(args->rlbFile, 0, SEEK_END); */
-/* 	long fileSize = ftell(args->rlbFile); */
-/* 	char *source = (char *)malloc((fileSize+1)*sizeof(char)); */
-
-/* 	fseek(args->rlbFile, 0, SEEK_SET); */
-/* 	long sourceSize = fread(source, sizeof(char), fileSize, args->rlbFile); */
-/* 	source[sourceSize] = '\0'; */
-/* 	return source; */
-/* } */
