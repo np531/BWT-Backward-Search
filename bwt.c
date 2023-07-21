@@ -166,7 +166,9 @@ struct MatchList *findMatches(struct Index *index, struct MatchList *matches, ch
 	// Find the consecutive suffixes of all matches <first,last>
 	int first;
 	int last;
-	searchBWT(index, pattern, &first, &last);
+	if (searchBWT(index, pattern, &first, &last) == 0) {
+		first = last+1;
+	}
 
 	/* for (int i = 0; i < ALPHABET_SIZE ; i++) { */
 	/* 	printf("|char: %c|value: %d|\n", (char)i, index->c[i]); */
@@ -202,7 +204,6 @@ struct MatchList *findMatches(struct Index *index, struct MatchList *matches, ch
 					break;
 				}
 			}
-			/* printf("Matched last record\n"); */
 		}
 		char *strMatch = extractStr(index, start); 
 		curMatch = initMatch(record-1,  strMatch);
@@ -267,7 +268,8 @@ void addMatch(struct MatchList *matchList, struct Match *match) {
 void printMatches(struct MatchList *matchList) {
 	struct Match *cur = matchList->head;
 	if (cur == NULL) {
-		printf("No matches");
+		// TODO - remove me
+		printf("No matches\n");
 	} else {
 		while (cur != NULL) {
 			printf("[%d]%s\n", cur->record, cur->string);
@@ -276,46 +278,3 @@ void printMatches(struct MatchList *matchList) {
 	}
 }
 
-/*
- *	Builds the occurrence and C tables used for indexing the BWT string
- */
-void buildTables(struct Index *index) {
-	int j = 0;
-	int *prev = index->occ[0];
-	// Construct the occ table
-	for (int i = 0 ; i < strlen(index->source) ; i++) {
-		// Update the Occ table
-		if (i == 0) {
-			index->occ[i][(int)index->source[i]]++;
-		} else {
-			index->occ = (int **)realloc(index->occ, (i+1)*sizeof(int *));
-			if (index->occ == NULL) {
-				printf("Unable to allocate memory for occ\n");
-				exit(1);
-			}
-
-			index->occ[i] = (int *)calloc(ALPHABET_SIZE, sizeof(int));
-			if (index->occ[i] == NULL) {
-				printf("Unable to allocate memory for occ\n");
-				exit(1);
-			}
-			memcpy(index->occ[i], prev, ALPHABET_SIZE*sizeof(int));
-			index->occ[i][(int)index->source[i]]++;
-			prev = index->occ[i];
-		}
-	}
-	
-	// Construct the C array
-	int *finalOcc = (int *)malloc(sizeof(int)*127);
-	memcpy(finalOcc, index->occ[index->count-1], sizeof(int)*127);
-	for (int i = ALPHABET_SIZE - 1 ; i >= 0 ; i--) {
-		if (finalOcc[i] != 0) {
-			j = i - 1;
-			while (j >= 0) {
-				index->c[i] += finalOcc[j];
-				j--;
-			}
-		}
-	}
-	free(finalOcc);
-}
