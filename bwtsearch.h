@@ -7,7 +7,7 @@
 #define PATTERN_MAX 512
 #define ALPHABET_SIZE 127
 #define MIN_RUN 3
-#define SMALL_FILE_MAX 1 
+#define SMALL_FILE_MAX 4000 
 extern char* strdup(const char*);
 
 struct Args {
@@ -25,7 +25,7 @@ struct Occ {
 struct Index {
 	long count;
 	char *source;
-	int *c;
+	int c[ALPHABET_SIZE];
 	/* struct Occ *occArray; */
 	long rlbSize;
 	int numGaps;

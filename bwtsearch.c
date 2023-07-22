@@ -177,12 +177,15 @@ long getBwtSize(struct Args *args, struct Index *index) {
 	while (getNextRun(args, run, &start, &end)) { 
 		runLen = runToInt(run, 0, strlen(run)-1);
 		temp = runLen;
+		index->source = (char *)realloc(index->source, lCount + 1 + temp*sizeof(char) + 1);
 
 		while (temp > 0) {
+			index->source = strncat(index->source, run , 1);
 			temp--;
 			lCount++;
 		}
 	}
+	index->count = lCount+1;
 	fseek(args->rlbFile, 0, SEEK_SET);
 	return lCount+1;
 
@@ -222,11 +225,7 @@ void decodeRLB(struct Args *args, struct Index *index) {
 
 	// Construct the C array
 	initCTable(index, curOcc);
-
-	/* int occNum = getGapOffset(index, 2); */
-	/* fseek(args->indexFile, sizeof(struct Occ)*occNum, SEEK_SET); */
-	/* struct Occ *testOcc = (struct Occ *)malloc(sizeof(struct Occ)); */
-	/* fread(testOcc, sizeof(struct Occ), 1, args->indexFile); */
+	fwrite(index->c, sizeof(index->c), 1, args->indexFile);
 
 	index->count = lCount+1;
 	free(curOcc);
@@ -248,24 +247,50 @@ int main(int argc, char **argv) {
 		printMatches(matches);
 
 	} else {
-		printf("large file\n");
+		/* printf("large file\n"); */
+		// Calculate the gap size to fit Occ objects and C table
 		long bwtSize = getBwtSize(args, index);
-		index->gapSize = (int)floor(bwtSize/index->numGaps);
+		index->gapSize = (int)(bwtSize)/index->numGaps;
+		while(index->gapSize*index->numGaps < bwtSize + (sizeof(int)*ALPHABET_SIZE)) {
+			index->gapSize += 5;
+		}
 
 		//TODO - REMOVE ME
-		index->gapSize = 4;
+		/* index->gapSize = 1; */
 
 		if (indexExists) {
-			printf("NOT YET IMPLEMENTED\n");
-			exit(1);
+			int *curC = (int *)malloc(sizeof(index->c));
+			/* printf("Index exists\n"); */
+			
+			// Read C table
+			fseek(args->indexFile, 0, SEEK_END);
+			long indexSize = ftell(args->indexFile);
+			fseek(args->indexFile, indexSize-sizeof(index->c), SEEK_SET);
+			if (fread(curC, sizeof(index->c), 1, args->indexFile) == 0) {
+				printf("FAILED TO READ C TABLE FROM INDEX\n");
+				exit(1);
+			}
+
+			memcpy(index->c, curC, sizeof(index->c));
+			/* printf("%ld\n", indexSize-sizeof(index->c)); */
+
+			free(curC);
+
 		} else {
 			decodeRLB(args, index);
 		}
-		int result = rank(args, index, 'n', 10);
-		printf("|%d|\n", result);
+		/* for (int i = 0 ; i < ALPHABET_SIZE ; i++) { */
+		/* 	printf("%c | %d\n", (char)i, index->c[i]); */
+		/* } */
 
-		/* matches = findMatches(args, index, matches, args->pattern); */
-		/* printMatches(matches); */
+		/* printf("%s\n", index->source); */
+		/* int result = rank(args, index, 'p', 8); */
+		/* printf("|%d|\n", result); */
+		/* char result = getBwtChar(args, index, 1); */
+		/* printf("|%c|\n", result); */
+
+		matches = findMatches(args, index, matches, args->pattern);
+		printMatches(matches);
 	}
 
 	// Free data structures
@@ -307,17 +332,9 @@ void freeIndex(struct Index *index) {
 	if (index->source != NULL) {
 		free(index->source);
 	}
-	// TODO - free occ array
-	/* if (index->occ != NULL) { */
-	/* 	int i = 0; */
-	/* 	while (i < index->count) { */
-	/* 		free(index->occ[i]); */
-	/* 		i++; */
-	/* 	} */
-	/* 	/1* free(index->occ); *1/ */
-	/* } */
 
-	free(index->c);
+	// TODO - IF C TABLE CHANGE BREAKS THINGS, RETURN TO POINTER
+	/* free(index->c); */
 	free(index);
 }
 
@@ -330,8 +347,8 @@ struct Index *initIndex(struct Args* args) {
 	index->count = 0;
 	index->source = NULL;
 
-	index->c = (int *)malloc(sizeof(int)*ALPHABET_SIZE);
-	// Initialise the array to empty
+	/* index->c = (int *)malloc(sizeof(int)*ALPHABET_SIZE); */
+	// Initialise the c array to empty
 	for (int i = 0 ; i < ALPHABET_SIZE ; i++) {
 		index->c[i] = 0;
 	}
@@ -352,8 +369,9 @@ struct Index *initIndex(struct Args* args) {
 	/* } */
 
 	/* index->occArray = NULL; */
-	if (index->rlbSize >= 525) {
-		int numGaps = (int)(floor(index->rlbSize)/(sizeof(struct Occ)+5));
+	// TODO - FIX UP SMALL (<1000 size rlb files once gaps are working)
+	if (index->rlbSize >= sizeof(struct Occ)+10) {
+		int numGaps = (int)(ceil(index->rlbSize)/(sizeof(struct Occ)));
 		index->numGaps = numGaps;
 		/* printf("numGaps: %d\n", numGaps); */
 		/* printf("gapSize: %d\n", index->gapSize); */
