@@ -64,6 +64,12 @@ char getOccFromRlb(struct Args *args, struct Index *index, struct Occ *curOcc, i
 
 	fseek(args->rlbFile, curRlbPos, SEEK_SET);
 
+	char prev = '\0';
+	/* printf("%d, %d\n", curLPos, lastOffset); */
+	
+	int a = curLPos;
+	int b = lastOffset;
+
 	while(getNextRun(args, run, &posCount, &posCount) && curLPos < lastOffset) {
 		runLen += runToInt(run, 0, strlen(run)-1);
 		while(runLen > 0 && curLPos < lastOffset) {
@@ -71,12 +77,18 @@ char getOccFromRlb(struct Args *args, struct Index *index, struct Occ *curOcc, i
 			runLen--;
 			curLPos++;
 		}
-			
+		prev = run[0];	
 		runLen = 0;
 	}
 	char curChar = run[0];
+	/* printf("%c\n", prev); */
+	/* printf("%c\n", curChar); */
 	free(run);
-	return curChar;
+	if (a != b) {
+		return prev;
+	} else {
+		return curChar;
+	}
 }
 
 int rank(struct Args *args, struct Index *index, char curChar, int line) {
@@ -104,22 +116,27 @@ int rank(struct Args *args, struct Index *index, char curChar, int line) {
 	}
 }
 
+char getBwtCharSlow(struct Args *args, struct Index *index, int offset) {
+	int a = offset - 1;
+	return index->source[a];
+}
+
 char getBwtChar(struct Args *args, struct Index *index, int offset) {
 	int a = offset - 1;
 
-	/* if (index->rlbSize <= SMALL_FILE_MAX) { */
+	if (index->rlbSize <= SMALL_FILE_MAX) {
 		return index->source[a];
-	/* } else { */
-	/* 	int blockOffset = getGapOffset(index, a); */
-	/* 	struct Occ *curOcc = (struct Occ *)malloc(sizeof(struct Occ)); */
-	/* 	fseek(args->indexFile, blockOffset*sizeof(struct Occ), SEEK_SET); */
-	/* 	fread(curOcc, sizeof(struct Occ), 1, args->indexFile); */
+	} else {
+		int blockOffset = getGapOffset(index, a);
+
+		struct Occ *curOcc = (struct Occ *)malloc(sizeof(struct Occ));
+		fseek(args->indexFile, blockOffset*sizeof(struct Occ), SEEK_SET);
+		fread(curOcc, sizeof(struct Occ), 1, args->indexFile);
 		
-	/* 	char result = getOccFromRlb(args, index, curOcc, blockOffset, offset - 1); */ 
-	/* 	printf("%c\n", result); */
-	/* 	free(curOcc); */
-	/* 	return result; */
-	/* } */
+		char result = getOccFromRlb(args, index, curOcc, blockOffset, offset - 1); 
+		free(curOcc);
+		return result;
+	}
 }
 
 // Backwards reconstrution functions
@@ -146,6 +163,7 @@ long getNextRecord(struct Args *args, struct Index *index, int offset) {
 		offset = rank(args, index, curChar, offset) + index->c[(int)curChar];
 		curChar = getBwtChar(args, index, offset);
 	}
+
 
 	// Find the record
 	while (offset > 0 && curChar != '[') {
@@ -214,9 +232,7 @@ int searchBWT(struct Args *args, struct Index *index, char *pattern, int *first,
 	}
 
 	while (*first <= *last && pIndex >= 2) {
-		/* printf("first: %d, last: %d\n", *first, *last); */
 		curChar = pattern[pIndex-2];
-		/* printf("\nfirst - |%d|\n", *first); */
 		if (rank(args, index, curChar, *first - 1) == -1) {
 			return 2;
 		}
@@ -252,10 +268,6 @@ struct MatchList *findMatches(struct Args *args, struct Index *index, struct Mat
 	/* printf("first: %d, last: %d\n", first, last); */
 	/* exit(1); */
 
-	/* for (int i = 0; i < ALPHABET_SIZE ; i++) { */
-	/* 	printf("|char: %c|value: %d|\n", (char)i, index->c[i]); */
-	/* } */
-
 	// Find the record associated with each match, find the next consective record
 	// and reconstruct the entire record.
 	long record;
@@ -265,29 +277,41 @@ struct MatchList *findMatches(struct Args *args, struct Index *index, struct Mat
 	struct Match *curMatch;
 	int result;
 	while (first <= last) {
+		/* printf("f/l %d - %d\n", first, last); */
+		/* printf("aaa\n"); */
 		record = getNextRecord(args, index, first);
+		/* printf("bbb\n"); */
+		fflush(stdout);
 		sprintf(recordStr, "[%ld]", record);
 		/* printf("%s\n",recordStr); */
+		fflush(stdout);
 
 		if (searchBWT(args, index, recordStr, &start, &end) == 0) {
+			/* printf("aaaa\n"); */
 			// Handle last record match
 			//  - Counts up from 0 looking for the first record
 			for (long i = 0 ; i <= record - 1 ; i++) {
 				sprintf(recordStr, "[%ld]", i);
 				/* printf("[%ld]\n", i); */
+				fflush(stdout);
 
 				result = searchBWT(args, index, recordStr, &start, &end);
+				/* printf("%d\n", result); */
 				if (result == 1) {
 					break;
 				} else if (result == 2) {
 					// handle case where first index is first record
 					sprintf(recordStr, "%ld]", i);
 					searchBWT(args, index, recordStr, &start, &end);
+					/* printf("%d, %d\n", start, end); */
+					fflush(stdout);
 					break;
 				}
 			}
 		}
+		/* printf("start - %d\n", start); */
 		char *strMatch = extractStr(args, index, start); 
+		/* printf("%s\n", strMatch); */
 		curMatch = initMatch(record-1,  strMatch);
 		free(strMatch);
 		addMatch(matches, curMatch);

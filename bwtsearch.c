@@ -57,41 +57,6 @@ int runToInt(char *source, long start, long end) {
 }
 
 /*
- *	Builds the occurrence and C tables used for indexing the BWT string
- */
-/* void buildTables(struct Index *index) { */
-/* 	// Construct the occ table */
-/* 	int *prev = index->occ[0]; */
-/* 	for (int i = 0 ; i < strlen(index->source) ; i++) { */
-/* 		// Update the Occ table */
-/* 		if (i == 0) { */
-/* 			index->occ[i][(int)index->source[i]]++; */
-/* 		} else { */
-/* 			index->occ = (int **)realloc(index->occ, (i+1)*sizeof(int *)); */
-/* 			if (index->occ == NULL) { */
-/* 				printf("Unable to allocate memory for occ\n"); */
-/* 				exit(1); */
-/* 			} */
-
-/* 			index->occ[i] = (int *)calloc(ALPHABET_SIZE, sizeof(int)); */
-/* 			if (index->occ[i] == NULL) { */
-/* 				printf("Unable to allocate memory for occ\n"); */
-/* 				exit(1); */
-/* 			} */
-/* 			memcpy(index->occ[i], prev, ALPHABET_SIZE*sizeof(int)); */
-/* 			index->occ[i][(int)index->source[i]]++; */
-/* 			prev = index->occ[i]; */
-/* 		} */
-/* 	} */
-	
-/* 	// Construct the C array */
-/* 	int *finalOcc = (int *)malloc(sizeof(int)*127); */
-/* 	memcpy(finalOcc, index->occ[index->count-1], sizeof(int)*127); */
-/* 	initCTable(index, finalOcc); */
-/* 	free(finalOcc); */
-/* } */
-
-/*
  *	Reads the next char+binary run into a string to be processed
  *	Counts the number of bytes and adds it to posCount
  */
@@ -177,10 +142,10 @@ long getBwtSize(struct Args *args, struct Index *index) {
 	while (getNextRun(args, run, &start, &end)) { 
 		runLen = runToInt(run, 0, strlen(run)-1);
 		temp = runLen;
-		index->source = (char *)realloc(index->source, lCount + 1 + temp*sizeof(char) + 1);
+		/* index->source = (char *)realloc(index->source, lCount + 1 + temp*sizeof(char) + 1); */
 
 		while (temp > 0) {
-			index->source = strncat(index->source, run , 1);
+			/* index->source = strncat(index->source, run , 1); */
 			temp--;
 			lCount++;
 		}
@@ -227,9 +192,21 @@ void decodeRLB(struct Args *args, struct Index *index) {
 	initCTable(index, curOcc);
 	fwrite(index->c, sizeof(index->c), 1, args->indexFile);
 
-	index->count = lCount+1;
+	// Store the size of the decoded BWT
+	long bwtSize = lCount + 1;
+	fwrite(&bwtSize, sizeof(long), 1, args->indexFile);
+
+	index->count = bwtSize;
 	free(curOcc);
 	free(run);
+}
+
+// TODO - fix calc to ensure it doesnt go over rlb size
+void calcGapSize(struct Index *index, long bwtSize) {
+	index->gapSize = (int)(bwtSize)/index->numGaps;
+	while(index->gapSize*index->numGaps < bwtSize + (sizeof(int)*ALPHABET_SIZE) + sizeof(long)) {
+		index->gapSize += 10;
+	}
 }
 
 int main(int argc, char **argv) {
@@ -247,53 +224,39 @@ int main(int argc, char **argv) {
 		printMatches(matches);
 
 	} else {
-		/* printf("large file\n"); */
-		// Calculate the gap size to fit Occ objects and C table
-		long bwtSize = getBwtSize(args, index);
-		index->gapSize = (int)(bwtSize)/index->numGaps;
-		while(index->gapSize*index->numGaps < bwtSize + (sizeof(int)*ALPHABET_SIZE)) {
-			index->gapSize += 5;
-		}
-
-		//TODO - REMOVE ME
-		/* index->gapSize = 1; */
-
 		if (indexExists) {
 			int *curC = (int *)malloc(sizeof(index->c));
-			/* printf("Index exists\n"); */
 			
 			// Read C table
 			fseek(args->indexFile, 0, SEEK_END);
 			long indexSize = ftell(args->indexFile);
-			fseek(args->indexFile, indexSize-sizeof(index->c), SEEK_SET);
+			fseek(args->indexFile, indexSize-sizeof(index->c)-sizeof(long), SEEK_SET);
 			if (fread(curC, sizeof(index->c), 1, args->indexFile) == 0) {
 				printf("FAILED TO READ C TABLE FROM INDEX\n");
 				exit(1);
 			}
 
+			long bwtSize;
+			fseek(args->indexFile, indexSize-sizeof(long), SEEK_SET);
+			if (fread(&bwtSize, sizeof(long), 1, args->indexFile) == 0) {
+				printf("FAILED TO READ bwtSize FROM INDEX\n");
+				exit(1);
+			}
+			index->count = bwtSize;
+			calcGapSize(index, index->count);
+
 			memcpy(index->c, curC, sizeof(index->c));
-			/* printf("%ld\n", indexSize-sizeof(index->c)); */
-
 			free(curC);
-
 		} else {
+			long bwtSize = getBwtSize(args, index);
+			calcGapSize(index, bwtSize);
 			decodeRLB(args, index);
 		}
-		/* for (int i = 0 ; i < ALPHABET_SIZE ; i++) { */
-		/* 	printf("%c | %d\n", (char)i, index->c[i]); */
-		/* } */
-
-		/* printf("%s\n", index->source); */
-		/* int result = rank(args, index, 'p', 8); */
-		/* printf("|%d|\n", result); */
-		/* char result = getBwtChar(args, index, 1); */
-		/* printf("|%c|\n", result); */
 
 		matches = findMatches(args, index, matches, args->pattern);
 		printMatches(matches);
 	}
 
-	// Free data structures
 	freeIndex(index);
 	freeMatchList(matches);
 	freeArgs(args);
@@ -357,21 +320,10 @@ struct Index *initIndex(struct Args* args) {
 	index->rlbSize = ftell(args->rlbFile);
 	fseek(args->rlbFile, 0, SEEK_SET);
 
-	/* index->occ = (int **)malloc(sizeof(int *)); */
-	/* if (index->occ == NULL) { */
-	/* 	printf("Unable to allocate initial memory for occ\n"); */
-	/* 	exit(1); */
-	/* } */
-	/* index->occ[0] = (int *)calloc(ALPHABET_SIZE, sizeof(int)); */
-	/* if (index->occ[0] == NULL) { */
-	/* 	printf("Unable to allocate initial memory for occ\n"); */
-	/* 	exit(1); */
-	/* } */
-
 	/* index->occArray = NULL; */
 	// TODO - FIX UP SMALL (<1000 size rlb files once gaps are working)
 	if (index->rlbSize >= sizeof(struct Occ)+10) {
-		int numGaps = (int)(ceil(index->rlbSize)/(sizeof(struct Occ)));
+		int numGaps = (int)(ceil(index->rlbSize)/(sizeof(struct Occ))) - 1;
 		index->numGaps = numGaps;
 		/* printf("numGaps: %d\n", numGaps); */
 		/* printf("gapSize: %d\n", index->gapSize); */

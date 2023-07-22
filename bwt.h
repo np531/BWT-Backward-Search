@@ -22,6 +22,7 @@ int getGapOffset(struct Index *index, int offset);
 int getOccAtOffsetSlow(struct Index *index, int offset, char curChar);
 int rank(struct Args *args, struct Index *index, char curChar, int line);
 char getBwtChar(struct Args *arg, struct Index *index, int offset);
+char getBwtCharSlow(struct Args *args, struct Index *index, int offset);
 
 void reverseStr(char *str);
 long getNextRecord(struct Args *args, struct Index *index, int offset);
