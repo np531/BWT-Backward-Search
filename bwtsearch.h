@@ -26,7 +26,6 @@ struct Index {
 	long count;
 	char *source;
 	int c[ALPHABET_SIZE];
-	/* struct Occ *occArray; */
 	long rlbSize;
 	int numGaps;
 	int gapSize;

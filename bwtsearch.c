@@ -130,6 +130,10 @@ void decodeRLBSlow(struct Args *args, struct Index *index) {
 	free(run);
 }
 
+/*
+ * Decodes the rlb file to find the size of the original BWT text
+ * Used for calculating gapSize (necessary for rlbDecode)
+ */
 long getBwtSize(struct Args *args, struct Index *index) {
 	long start = 0;
 	long  end = 0;
@@ -156,6 +160,20 @@ long getBwtSize(struct Args *args, struct Index *index) {
 
 }
 
+// TODO
+/*
+ *	Increase the buffer size being read in from the rlb file during index creation
+ *  - Extend getNextRun so it reads a 512KB? buffer into memory (checking to ensure
+ *    the end matches up with the end of a run)
+ *  - Extend decodeRlb and getBwtSize to handle this change, updating index accordingly
+ *  - Also find why 'Ship' is so goddamn slow on small2 lmao
+ */ 
+
+
+/*
+ * Decodes the rlb file, generating and writing to the index file
+ * as it decodes the bwt text
+ */
 void decodeRLB(struct Args *args, struct Index *index) {
 	long start = 0;
 	long end = 0;
@@ -201,7 +219,9 @@ void decodeRLB(struct Args *args, struct Index *index) {
 	free(run);
 }
 
-// TODO - fix calc to ensure it doesnt go over rlb size
+/*
+ *	Calculates a minimal gapSize that is less than the size of the rlb file provided
+ */
 void calcGapSize(struct Index *index, long bwtSize) {
 	index->gapSize = (int)(bwtSize)/index->numGaps;
 	while(index->gapSize*index->numGaps < bwtSize + (sizeof(int)*ALPHABET_SIZE) + sizeof(long)) {
@@ -227,7 +247,7 @@ int main(int argc, char **argv) {
 		if (indexExists) {
 			int *curC = (int *)malloc(sizeof(index->c));
 			
-			// Read C table
+			// Read C table from index file
 			fseek(args->indexFile, 0, SEEK_END);
 			long indexSize = ftell(args->indexFile);
 			fseek(args->indexFile, indexSize-sizeof(index->c)-sizeof(long), SEEK_SET);
@@ -236,6 +256,7 @@ int main(int argc, char **argv) {
 				exit(1);
 			}
 
+			// Calculate the gapSize used in the index file
 			long bwtSize;
 			fseek(args->indexFile, indexSize-sizeof(long), SEEK_SET);
 			if (fread(&bwtSize, sizeof(long), 1, args->indexFile) == 0) {
@@ -248,6 +269,7 @@ int main(int argc, char **argv) {
 			memcpy(index->c, curC, sizeof(index->c));
 			free(curC);
 		} else {
+			// Generate index file
 			long bwtSize = getBwtSize(args, index);
 			calcGapSize(index, bwtSize);
 			decodeRLB(args, index);

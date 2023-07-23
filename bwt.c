@@ -60,13 +60,10 @@ char getOccFromRlb(struct Args *args, struct Index *index, struct Occ *curOcc, i
 	int curLPos = blockOffset*index->gapSize; 
 	char *run = (char *)malloc(sizeof(char));
 	run[0] = '\0';
-	/* printf("%d | %d\n", curLPos, lastOffset); */
 
 	fseek(args->rlbFile, curRlbPos, SEEK_SET);
 
 	char prev = '\0';
-	/* printf("%d, %d\n", curLPos, lastOffset); */
-	
 	int a = curLPos;
 	int b = lastOffset;
 
@@ -81,9 +78,10 @@ char getOccFromRlb(struct Args *args, struct Index *index, struct Occ *curOcc, i
 		runLen = 0;
 	}
 	char curChar = run[0];
-	/* printf("%c\n", prev); */
-	/* printf("%c\n", curChar); */
 	free(run);
+
+	// If the offset into the text you are looking for aligns with a gap start
+	// then return the char associated with that occ
 	if (a != b) {
 		return prev;
 	} else {
@@ -98,7 +96,6 @@ int rank(struct Args *args, struct Index *index, char curChar, int line) {
 	}
 
 	if (index->rlbSize <= SMALL_FILE_MAX) {
-		/* printf("a | %d\n", a); */
 		return getOccAtOffsetSlow(index, a, curChar);	
 	} else {
 		int blockOffset = getGapOffset(index, a);
@@ -241,17 +238,26 @@ int searchBWT(struct Args *args, struct Index *index, char *pattern, int *first,
 		pIndex--;
 	}
 
-	/* printf("first: %d, last: %d\n", *first, *last); */
 	if (*last < *first) {
 		return 0;
 	}
-	// Calculate matches based on the suffixes that match the pattern
-	/* if (*last < *first) { */
-	/* 	printf("no matches\n"); */
-	/* } else { */
-	/* 	printf("MATCH FOUND - %d to %d\n", *first, *last); */
-	/* } */
+
 	return 1;
+}
+
+/*
+ * Given a record number, checks if the record has already been found
+ */
+int recordAlreadyMatched(struct MatchList *matches, long record) {
+	struct Match *cur = matches->head;
+	int found = 0;
+	while (cur != NULL) {
+		if (cur->record == record) {
+			return 1;
+		}
+		cur = cur->next;
+	}
+	return found;
 }
 
 
@@ -265,8 +271,6 @@ struct MatchList *findMatches(struct Args *args, struct Index *index, struct Mat
 	if (searchBWT(args, index, pattern, &first, &last) == 0) {
 		first = last+1;
 	}
-	/* printf("first: %d, last: %d\n", first, last); */
-	/* exit(1); */
 
 	// Find the record associated with each match, find the next consective record
 	// and reconstruct the entire record.
@@ -277,41 +281,32 @@ struct MatchList *findMatches(struct Args *args, struct Index *index, struct Mat
 	struct Match *curMatch;
 	int result;
 	while (first <= last) {
-		/* printf("f/l %d - %d\n", first, last); */
-		/* printf("aaa\n"); */
 		record = getNextRecord(args, index, first);
-		/* printf("bbb\n"); */
-		fflush(stdout);
+		if (recordAlreadyMatched(matches, record-1)) {
+			first++;
+			continue;
+		}
+		/* printf("record - %ld\n", record-1); */
 		sprintf(recordStr, "[%ld]", record);
-		/* printf("%s\n",recordStr); */
-		fflush(stdout);
 
 		if (searchBWT(args, index, recordStr, &start, &end) == 0) {
-			/* printf("aaaa\n"); */
 			// Handle last record match
 			//  - Counts up from 0 looking for the first record
 			for (long i = 0 ; i <= record - 1 ; i++) {
 				sprintf(recordStr, "[%ld]", i);
-				/* printf("[%ld]\n", i); */
-				fflush(stdout);
 
 				result = searchBWT(args, index, recordStr, &start, &end);
-				/* printf("%d\n", result); */
 				if (result == 1) {
 					break;
 				} else if (result == 2) {
 					// handle case where first index is first record
 					sprintf(recordStr, "%ld]", i);
 					searchBWT(args, index, recordStr, &start, &end);
-					/* printf("%d, %d\n", start, end); */
-					fflush(stdout);
 					break;
 				}
 			}
 		}
-		/* printf("start - %d\n", start); */
 		char *strMatch = extractStr(args, index, start); 
-		/* printf("%s\n", strMatch); */
 		curMatch = initMatch(record-1,  strMatch);
 		free(strMatch);
 		addMatch(matches, curMatch);
