@@ -146,10 +146,7 @@ long getBwtSize(struct Args *args, struct Index *index) {
 	while (getNextRun(args, run, &start, &end)) { 
 		runLen = runToInt(run, 0, strlen(run)-1);
 		temp = runLen;
-		/* index->source = (char *)realloc(index->source, lCount + 1 + temp*sizeof(char) + 1); */
-
 		while (temp > 0) {
-			/* index->source = strncat(index->source, run , 1); */
 			temp--;
 			lCount++;
 		}
@@ -169,6 +166,160 @@ long getBwtSize(struct Args *args, struct Index *index) {
  *  - Also find why 'Ship' is so goddamn slow on small2 lmao
  */ 
 
+int getNextChunk(struct Index *index, struct Args *args, char *chunk) {
+	char cur;
+
+	// Read the chunk into memory
+	if (!fread(chunk, CHUNK_SIZE, 1, args->rlbFile)) {
+		return index->rlbSize%CHUNK_SIZE;
+	}
+	chunk[CHUNK_SIZE] = '\0';
+
+
+	// find all the subsequent run bytes
+	if (!fread(&cur, 1, 1, args->rlbFile)) {
+		return -1;
+	}
+	while ((cur >> 7) & 1) {
+		/* chunk = (char *)realloc(chunk, strlen(chunk) + 2); */
+		chunk = strncat(chunk, &cur, 1);
+		if (!fread(&cur, 1, 1, args->rlbFile)) {
+			break;
+		}
+	} 
+	fseek(args->rlbFile, -1, SEEK_CUR);
+
+	return -1;
+}
+
+int getNextChunkRun(struct Args *args, char* chunk, char *run, long *chunkPointer, long *start, long *end) {
+	char cur;
+	long chunkLen = strlen(chunk);
+	run = (char *)realloc(run, sizeof(char));
+	run[0] = '\0';
+
+	// Read the first byte (a character) into memory
+	cur = chunk[*chunkPointer];
+	(*chunkPointer)++;
+	if (*chunkPointer > chunkLen) {
+		/* printf("%c\n", cur); */
+		/* printf("b\n"); */
+		/* run = (char *)realloc(run, strlen(run) + 2); */
+		/* run = strncat(run, &cur, 1); */
+		return 0;
+	}
+	run = (char *)realloc(run, strlen(run) + 2);
+	run = strncat(run, &cur, 1);
+	(*start)++;
+	(*end)++;
+
+	// find all the subsequent run bytes
+	cur = chunk[*chunkPointer];
+	(*chunkPointer)++;
+	if (*chunkPointer > chunkLen) {
+		return 1;
+	}
+	while ((cur >> 7) & 1) {
+		(*end)++;
+		run = (char *)realloc(run, strlen(run) + 2);
+		run = strncat(run, &cur, 1);
+
+		cur = chunk[*chunkPointer];
+		(*chunkPointer)++;
+		if (*chunkPointer > chunkLen) {
+			return 1;
+		}
+	} 
+	(*chunkPointer)--;
+
+	return 1;
+}
+
+void decodeRLBFast(struct Args *args, struct Index *index) {
+	long start = 0;
+	long end = 0;
+	long lCount = -1;
+
+	struct Occ *newOcc = NULL; 
+	char *chunk = (char *)malloc(CHUNK_SIZE*sizeof(char)+50);
+	char *run= (char *)malloc(sizeof(char));
+	int *curOcc = (int *)calloc(ALPHABET_SIZE, sizeof(int));
+
+	int temp = 0;
+	int runLen = 0;
+
+	long chunkPointer = 0;
+
+	// Continually read each character run from rlb file
+	int size = getNextChunk(index, args, chunk);
+	while (size == -1) { 
+		/* printf("%s - len:%ld\n", chunk, strlen(chunk)); */
+		/* printf("a - chunk: '%s'\n", chunk); */
+		while (getNextChunkRun(args, chunk, run, &chunkPointer, &start, &end)) {
+			/* printf("run - %s\n", run); */
+			/* printBits(sizeof(char), &run[1]); */
+			runLen = runToInt(run, 0, strlen(run)-1);
+			/* printf("%c - %d\n", run[0], runLen); */
+
+			temp = runLen;
+			while (temp > 0) {
+				curOcc[(int)run[0]]++;
+				temp--;
+				lCount++;
+				
+				if (lCount % index->gapSize == 0) {
+					newOcc = initOccBlock(start - 1, curOcc, runLen-temp);
+					fwrite(newOcc, sizeof(struct Occ), 1, args->indexFile);
+					free(newOcc);
+				}
+			}
+			start=end;
+		}
+		chunkPointer = 0;
+		size = getNextChunk(index, args, chunk);
+	}
+	/* printf("a - chunk: '%s' %d\n", chunk, size); */
+	// Handle last chunk
+	if (size > 0) {
+		chunkPointer = 0;
+		chunk[size] = '\0';
+		/* printf("%s\n", chunk); */
+		while (getNextChunkRun(args, chunk, run, &chunkPointer, &start, &end)) {
+			/* printf("run - %s\n", run); */
+			runLen = runToInt(run, 0, strlen(run)-1);
+			temp = runLen;
+			while (temp > 0) {
+				curOcc[(int)run[0]]++;
+				temp--;
+				lCount++;
+				
+				if (lCount % index->gapSize == 0) {
+					newOcc = initOccBlock(start - 1, curOcc, runLen-temp);
+					fwrite(newOcc, sizeof(struct Occ), 1, args->indexFile);
+					free(newOcc);
+				}
+			}
+			start=end;
+		}
+	}
+
+	// Construct the C array
+	initCTable(index, curOcc);
+	fwrite(index->c, sizeof(index->c), 1, args->indexFile);
+
+	for (int i = 0 ; i < ALPHABET_SIZE ; i++) {
+		printf("%c - %d\n", (char)i, index->c[i]);
+	}
+	
+	// Store the size of the decoded BWT
+	long bwtSize = lCount + 1;
+	fwrite(&bwtSize, sizeof(long), 1, args->indexFile);
+
+	index->count = bwtSize;
+	free(curOcc);
+	free(chunk);
+	free(run);
+}
 
 /*
  * Decodes the rlb file, generating and writing to the index file
@@ -272,9 +423,11 @@ int main(int argc, char **argv) {
 			// Generate index file
 			long bwtSize = getBwtSize(args, index);
 			calcGapSize(index, bwtSize);
-			decodeRLB(args, index);
+			/* decodeRLB(args, index); */
+			decodeRLBFast(args, index);
 		}
 
+		/* printf("a\n"); */
 		matches = findMatches(args, index, matches, args->pattern);
 		printMatches(matches);
 	}

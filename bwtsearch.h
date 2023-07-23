@@ -7,7 +7,8 @@
 #define PATTERN_MAX 512
 #define ALPHABET_SIZE 127
 #define MIN_RUN 3
-#define SMALL_FILE_MAX 2500 
+#define SMALL_FILE_MAX 1 
+#define CHUNK_SIZE 15 
 extern char* strdup(const char*);
 
 struct Args {
